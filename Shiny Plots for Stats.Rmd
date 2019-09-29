@@ -1,0 +1,315 @@
+---
+title: "MA Schools"
+runtime: shiny
+author: "Abe and Angus, and Cal"
+date: "11/7/2018"
+output: 
+  ioslides_presentation:
+    css: styles.css
+    widescreen: true
+---
+
+
+```{r setup, message=FALSE, warning = F, echo = F}
+knitr::opts_chunk$set(echo = TRUE)
+library(AER)
+library(carData)
+library(tidyverse)
+library(plotly)
+library(ggplot2)
+library(scales)
+library(shiny)
+library(dplyr)
+library(relaimpo)
+library(broom)
+library(stringr)
+library(rvest)
+library(httr)
+data("MASchools")
+```
+
+
+# Dataset: MASchools is stored in `R data sets` and contains data on test performance, school characteristics, and student demographics for districts in Massachusetts. We also obtained geographic data from Wikipedia. {.smaller}
+
+
+
+## Variable Chart
+
+```{r, shiny1, echo = F, message = F, warning = F}
+df <- matrix(c("district", "group by", "categ.", "1-350", "Dist. names",
+             "municipality", "group by", "categ.", "names", "Mun. names",
+             "expreg", "expl.", "quant.", ">0", "dollars",
+             "expspecial", "expl.", "quant.", ">0", "dollars",
+             "expbil", "expl.", "quant.", ">0", "dollars",
+             "expocc", "expl.", "quant.", ">0", "dollars",
+             "exptot", "expl.", "quant.", ">0", "dollars",
+             "scratio", "expl.", "quant.", ">0", "stud./computer",
+             "special", "expl.", "quant.", "1>x>0", "% of students",
+             "lunch", "expl.", "quant.", "1>x>0", "% of students",
+             "stratio", "expl.", "quant.", ">0", "stud./teacher",
+             "income", "expl.", "quant.", ">0", "dollars",
+             "salary", "expl.", "quant.", ">0", "dollars",
+             "english", "expl.", "quant.", "1>x>0", "% of students",
+             "score4", "response", "quant.", ">0", "test score",
+             "score8", "response", "quant.", ">0", "test score"),
+             ncol = 5, byrow = TRUE)
+
+colnames(df) <- c("Name", "Variable Role", "Variable Type", "Value", "Units")
+#rownames(df) <- c("District", "Municipality", "Expenditures - Reg", "Expenditures - Special", "Expenditures - Bil", "Expenditures - Occ", "Expenditures - Tot", "Students/Computer", "Special Ed", "Lunch Assisted", "Student/Teacher", "Per capita income", "Teacher Salary", "% English Learners", "4th grade score", "8th grade score")
+#would include row names, but data frame doesn't fit otherwise
+df
+```
+
+# Research Question 
+
+# What variable from this data set has the highest correlation with 4th grade test scores?
+
+## Exploratory Data Analysis {.smaller}
+```{r shiny2, echo = FALSE}
+inputPanel(
+  selectInput("x", label = "Explanatory Variable:",
+    choices = c("% Free/Reduced Lunch" = "lunch",
+                "Income per Capita" = "income",
+                "Student Teacher Ratio" = "stratio",
+                "% Special Ed Students" = "special",
+                "% English Learners" = "english",
+                "Expenditures Per Student" = "exptot",
+                "Average Teacher Salary" = "salary",
+                "Student Computer Ratio" = "scratio"), 
+    selected = "scratio", selectize = F, size = 2)
+)
+
+renderPlotly({
+    ggplot(data = MASchools,
+           mapping = aes_string(x = input$x, 
+                                    y = MASchools$score4)) + 
+      geom_point(color = "white") +
+    geom_smooth(se = F, color = "royalblue") +
+      labs(
+        title = "Correlation of Variables with Test Scores",
+        x = input$x,
+        y = "4th Grade Test Scores"
+    ) + 
+    theme( 
+      legend.position = "bottom",
+      panel.background = 
+            element_rect(fill = "black",
+                                colour = "grey",
+                                size = 0.5, linetype = "solid"),
+      panel.grid.major = 
+            element_line(size = 0.1, linetype = 'solid',
+                                colour = "grey55"), 
+      panel.grid.minor = 
+            element_line(size = 0.1, linetype = 'solid',
+                                colour = "grey55"))
+})
+```
+
+## Data Manipulation and Visualization {.smaller}
+>- Comparing average test scores geographically 
+>- Our Data had test scores by Municipality and we wanted to map the state by County to make the map more readable
+>- We read in and merged data from Wikipedia in order to create a new variable that tells us which County each Municipality is in.
+
+## Data Visualization (continued) {.smaller}
+This map compares average scores and average percent of students on reduced lunch 
+by county
+
+```{r, shiny10, echo = F, message = F, warning = F}
+wiki <- read_html("https://en.wikipedia.org/wiki/List_of_municipalities_in_Massachusetts")
+county_municipality <- html_nodes(wiki, css = "table")
+county_municipality <- html_table(county_municipality, header = TRUE, fill = TRUE)[[1]]
+county <- as_tibble(county_municipality)
+counties <- county %>%
+  rename(municipality = Municipality,
+         county = `County[2]`)
+MASchools_county <- merge(MASchools, counties, by = "municipality")
+county_MA <- MASchools_county %>% 
+  group_by(county) %>%
+  summarise(avgscore_county = mean(score4),
+                avg_lunch = mean(lunch)) %>%
+  rename(subregion = county) %>%
+  mutate(subregion = tolower(subregion))
+massive <- map_data("county") %>%
+  filter(region == 'massachusetts')
+total <- left_join(massive, county_MA, by="subregion")
+
+plot <- total %>%
+  ggplot(aes(long, lat, group = group)) +
+  geom_polygon(aes(fill = round(avgscore_county, 3), 
+                 text = paste0("Average Score: ", 
+round(avgscore_county,3),"
+Average Reduced Lunch: ", 
+                               round(avg_lunch,3),"%", "
+County Name: ", total$subregion)),
+             color = "black") +
+  labs(
+  title = " ",
+  x = "",
+  y = "") + 
+  scale_fill_gradient(low = "cornsilk2",
+                      high = "darkmagenta",
+                       breaks = c(675,680,685,690,
+                                  695,700,705,710,715,720),
+                      name = "Average Test Score") +
+    theme( 
+      legend.position = "bottom",
+      panel.background = 
+            element_rect(fill = "white",
+                                colour = "black",
+                                size = 0.5, linetype = "solid"),
+      panel.grid.major = 
+            element_line(size = 0.1, linetype = 'solid',
+                                colour = "white"), 
+      panel.grid.minor = 
+            element_line(size = 0.1, linetype = 'solid',
+                                colour = "white"),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.ticks.y=element_blank())
+  
+ggplotly(plot, 
+         tooltip = c("text"))
+```
+>- Based on these plots it seems that the percent of students on free and reduced lunch is very correlated with test scores.
+
+## Using a Model {.smaller}
+>- Picking our variables
+>- Avoiding collinearity of variables
+
+
+```{r, shiny3, message = F, warning = F, echo = F}
+schools1 <- MASchools  
+```
+
+```{r, shiny4, message = F, warning = F}
+vif(lm(score4 ~ exptot + 
+             expreg + expspecial + 
+             income + lunch + 
+             english + stratio + salary + 
+             scratio
+             , data = schools1))
+```
+>- We can see if we include all of our variables that the $\textit{vif}$ values are sometimes very high. So we must be maticulous in the selection of our variables.
+
+## The Key Variables |
+We should not include all types of expenditures because exptot is calculated by taking the sum of the other expenditures, so there is an obvious correlation there. If we remove exptot and just look at the other two types of expenditures, our model will avoid problems of collinearity.
+
+```{r, shiny5, message = F, warning=F, echo = F}
+vif(lm(score4 ~ 
+             expreg + expspecial + 
+             income + lunch + 
+             english + stratio + salary + 
+             scratio
+             , data = schools1))
+```
+>- We see now if we remove `exptot` we have no problems with collinearity. We can see some correlation between `income` and `lunch`, however since our $\textit{vif}$ values are less than 5, it will not harm our model.
+
+## Multiple Linear Regression | 
+If we fit our data to the right model, we can determine which explanatory variable has the most correlation with test scores.      
+ 
+ >- Note: Since income did not seem to have a completely linear relationship, we used $\sqrt{income}$ to have a more accurate model.
+
+```{r, shiny6, message = F, warning = F}
+fit1 <- lm(score4 ~ salary +
+             expspecial +
+             expreg +
+             special +
+             sqrt(income) +
+             lunch +
+             stratio +
+             english, data = schools1)
+``` 
+
+
+## Initial Summary of Our Model {.smaller}
+
+```{r, shiny7, message = F, warning = F, echo = F}
+summary(fit1)
+```
+
+
+## Determing the most important variable | How should we pick which variable is the most highly correlated?
+
+>- p-value? 
+>- p-value is helpful to determine statistical significance, but in a multiple regression model, the lowest p-value does not necessarily mean the highest correlation between explanatory variable and response variable.
+>- Correlation Coefficient?
+>- A correlation coefficient can tell us how related an explanatory variable is to the response variable.
+
+## Finding the Correlation Coefficients | Before we find the correlation coefficients for each variable, we must consider their implications. 
+
+>- Does it make sense to compare the correlation coefficients of two variables that are on different scales?
+>- Does a one-unit change in average teacher salary have the same impact as a one-unit change in student/teacher ratio?
+>- So if we calculate our raw correlation coefficients, will they accurately tell us which explanatory variable is most highly correlated with our response variable?
+>- Not Necessarily!
+
+## Addressing this problem |
+We've determined that we cannot accurately compare correlation coefficients of explanatory variables that are on different scales. So how do we make it so we $\textit{can}$ accurately compare the regression coefficients between variables?
+
+>- Standardize the Coefficients!
+
+>- By standardizing the coefficients, we will be able to compare the regression coefficients between variables and from there we can determine which explanatory variable has the strongest correlation to 4th grade test scores.
+
+## Standardizing the Coefficients |
+In order to standardize the regression correlation coefficients, we will use a package called `relaimpo`. This package contains a metric entitled "$\textit{betasq}$" which is designed for "assessing individual contributions" of variables to a model. 
+
+>- Note: The description of this metric from an analysis of the package is as follows - "Standardized coefficients are introduced as scale-invariant versions of the coefficients, by adjusting with estimated standard deviations: 
+$\hat{\beta_{k,standardized}} = \hat{\beta_k} \cdot \frac{\sqrt{s_{kk}}}{\sqrt{s_{yy}}}$      
+where $s_{kk}$ and $s_{yy}$ denote the empirical variances of regressor $x_k$ and the response $y$ respectively. The squared standardized coefficient has been proposed as a metric for relative importance"
+
+## Showing the Standardized Correlation Coefficients {.smaller} 
+```{r, shiny8, message=F, warning=F, echo = F}
+sum <- calc.relimp(fit1, 
+                        type= c("betasq"), 
+                        rela = T, 
+                        rank = T, 
+                        diff = T)
+sum
+```
+
+## Interpreting the Variable Correlation Coefficients
+```{r, shiny9, echo = F, message = F, warning = F}
+diitt<- as.data.frame(sum$betasq)
+tabby <- tibble(Variable_Name = c("salary", "expspecial", "expreg", 
+                    "special", "income", "lunch", 
+                    "stratio", "english"), 
+       Relative_Importance = c(round(diitt[1,], 5),
+                    round(diitt[2,], 5),
+                    round(diitt[3,], 5),
+                    round(diitt[4,], 5),
+                    round(diitt[5,], 5),
+                    round(diitt[6,], 5),
+                    round(diitt[7,], 5),
+                    round(diitt[8,], 5)))
+
+table <- as.data.frame(tabby)
+table1 <- table[order(-table$Relative_Importance), ]
+p <- table1 %>%
+  ggplot(mapping = aes(
+    x = Variable_Name,
+    y = Relative_Importance
+  )) +
+  geom_col(color = "white", fill = "white") +
+      labs(
+        title = "Standardized Correlation Coefficients",
+        x = "Variable Name",
+        y = "Correlation Coefficients"
+    ) + 
+    theme( 
+      legend.position = "bottom",
+      panel.background = 
+            element_rect(fill = "black",
+                                colour = "grey",
+                                size = 0.5, linetype = "solid"),
+      panel.grid.major = 
+            element_line(size = 0.1, linetype = 'solid',
+                                colour = "grey55"), 
+      panel.grid.minor = 
+            element_line(size = 0.1, linetype = 'solid',
+                                colour = "grey55"))
+ggplotly(p)
+```
+
+
+>- From our analysis we can conclude that the strongest predictor of 4th grade test score is the percent of students on free and reduced lunch at the school.
+
